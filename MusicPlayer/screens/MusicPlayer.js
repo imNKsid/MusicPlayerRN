@@ -9,8 +9,8 @@ import {
   Image,
   // Use the below code to produce the same results without Animation
   //   FlatList,
-  Platform,
   Animated,
+  Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -32,6 +32,16 @@ const {width, height} = Dimensions.get('window');
 const setUpPlayer = async () => {
   try {
     await TrackPlayer.setupPlayer();
+    await TrackPlayer.updateOptions({
+      // Media controls capabilities
+      capabilities: [
+        Capability.Play,
+        Capability.Pause,
+        Capability.SkipToNext,
+        Capability.SkipToPrevious,
+        Capability.Stop,
+      ],
+    });
     await TrackPlayer.add(songs);
     console.log();
   } catch (e) {
@@ -55,7 +65,7 @@ const MusicPlayer = () => {
   const [songIndex, setSongIndex] = useState(0);
   const [trackTitle, setTrackTitle] = useState();
   const [trackArtist, setTrackArtist] = useState();
-  const [trackImage, setTrackImage] = useState('');
+  const [trackImage, setTrackImage] = useState();
   const [repeatMode, setRepeatMode] = useState('off');
   const playBackState = usePlaybackState();
   const progress = useProgress();
@@ -66,14 +76,32 @@ const MusicPlayer = () => {
 
   //Changing the track on complete
   useTrackPlayerEvents([Event.PlaybackTrackChanged], async event => {
-    if (event.type === Event.PlaybackTrackChanged && event.nextTrack !== null) {
+    if (
+      event.type === Event.PlaybackTrackChanged &&
+      typeof event?.nextTrack !== 'undefined' &&
+      Number.isInteger(event?.nextTrack) &&
+      event.nextTrack !== null
+    ) {
       const track = await TrackPlayer.getTrack(event.nextTrack);
-      console.log('track', track);
       const {title, artist, artwork} = track;
       setTrackTitle(title);
       setTrackArtist(artist);
-      //   console.log('artwork', artwork.uri);
       setTrackImage(artwork);
+    } else {
+      Alert.alert('Music ends!', 'Do you want to play from beginning?', [
+        {
+          text: 'Cancel',
+          onPress: () => console.log('Cancel Pressed'),
+          style: 'cancel',
+        },
+        {
+          text: 'OK',
+          onPress: () => {
+            TrackPlayer.setRepeatMode(RepeatMode.Queue);
+            setRepeatMode('repeat');
+          },
+        },
+      ]);
     }
   });
 
@@ -91,12 +119,15 @@ const MusicPlayer = () => {
 
   const changeRepeatMode = () => {
     if (repeatMode === 'off') {
+      TrackPlayer.setRepeatMode(RepeatMode.Track);
       setRepeatMode('track');
     }
     if (repeatMode === 'track') {
+      TrackPlayer.setRepeatMode(RepeatMode.Queue);
       setRepeatMode('repeat');
     }
     if (repeatMode === 'repeat') {
+      TrackPlayer.setRepeatMode(RepeatMode.Off);
       setRepeatMode('off');
     }
   };
@@ -112,6 +143,11 @@ const MusicPlayer = () => {
       setSongIndex(index);
       skipTo(index);
     });
+
+    return () => {
+      scrollX.removeAllListeners();
+      // TrackPlayer.destroy();
+    };
   }, []);
 
   const skipToNext = () => {
@@ -127,15 +163,15 @@ const MusicPlayer = () => {
   };
 
   // With Animation effect
-  const renderSongs = useCallback(({item, index}) => {
+  const renderSongs = ({item, index}) => {
     return (
       <Animated.View style={[styles.mainImageWrapper]}>
         <View style={[styles.imageWrapper, styles.elevation]}>
-          <Image source={item.artwork} style={styles.musicImage} />
+          <Image source={trackImage} style={styles.musicImage} />
         </View>
       </Animated.View>
     );
-  }, []);
+  };
 
   // Use the below code to produce the same results without Animation
   //   const renderSongs = useCallback(({item, index}) => {
@@ -222,7 +258,6 @@ const MusicPlayer = () => {
         <View style={styles.progressLevelDuration}>
           <Text style={styles.progressLevelText}>
             {new Date(progress.position * 1000).toISOString().substring(14, 19)}
-            {/* {new Date(progress.position * 1000).substring(15, 6)} */}
           </Text>
           <Text style={styles.progressLevelText}>
             {new Date(progress.duration * 1000).toISOString().substring(14, 19)}
@@ -235,7 +270,9 @@ const MusicPlayer = () => {
             <Ionicons name="play-skip-back-outline" size={35} color="#FFD369" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => togglePlayBack(playBackState)}>
+          <TouchableOpacity
+            onPress={() => togglePlayBack(playBackState)}
+            hitSlop={{top: 20, bottom: 20, left: 50, right: 50}}>
             <Ionicons
               name={
                 playBackState === State.Playing
@@ -263,11 +300,11 @@ const MusicPlayer = () => {
             <Ionicons name="heart-outline" size={30} color="#888888" />
           </TouchableOpacity>
 
-          <TouchableOpacity onPress={() => {}}>
+          <TouchableOpacity onPress={changeRepeatMode}>
             <MaterialCommunityIcons
-              name="repeat-off"
+              name={`${repeatIcon()}`}
               size={30}
-              color="#888888"
+              color={repeatMode !== 'off' ? '#FFD369' : '#888888'}
             />
           </TouchableOpacity>
 
@@ -300,8 +337,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   imageWrapper: {
-    width: Platform.OS === 'ios' ? 320 : 300,
-    height: Platform.OS === 'ios' ? 400 : 340,
+    width: width * 0.8, //Platform.OS === 'ios' ? 320 : 300,
+    height: height * 0.5, //Platform.OS === 'ios' ? 400 : 340,
+    borderRadius: 25,
   },
   elevation: {
     elevation: 5,
@@ -333,11 +371,11 @@ const styles = StyleSheet.create({
     fontWeight: '300',
   },
   progressBar: {
-    width: 350,
+    width: width * 0.89,
+    right: 5,
     height: 40,
-    marginTop: 25,
+    marginTop: 15,
     flexDirection: 'row',
-    transform: [{scaleY: 10}],
   },
   progressLevelDuration: {
     width: 340,
